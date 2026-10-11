@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -8,43 +8,24 @@ import ReactFlow, {
   useEdgesState,
   Handle,
   Position,
+  Panel,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
 // Custom Node Component
-const CustomNode = ({ data }) => {
+const CustomNode = ({ data, id }) => {
   const getNodeStyle = () => {
     switch (data.nodeType) {
       case 'trigger':
-        return {
-          background: '#10b981',
-          color: 'white',
-          border: '2px solid #059669',
-        };
+        return { background: '#10b981', border: '2px solid #059669' };
       case 'action':
-        return {
-          background: '#3b82f6',
-          color: 'white',
-          border: '2px solid #2563eb',
-        };
+        return { background: '#3b82f6', border: '2px solid #2563eb' };
       case 'condition':
-        return {
-          background: '#f59e0b',
-          color: 'white',
-          border: '2px solid #d97706',
-        };
+        return { background: '#f59e0b', border: '2px solid #d97706' };
       case 'end':
-        return {
-          background: '#ef4444',
-          color: 'white',
-          border: '2px solid #dc2626',
-        };
+        return { background: '#ef4444', border: '2px solid #dc2626' };
       default:
-        return {
-          background: '#6b7280',
-          color: 'white',
-          border: '2px solid #4b5563',
-        };
+        return { background: '#6b7280', border: '2px solid #4b5563' };
     }
   };
 
@@ -57,7 +38,9 @@ const CustomNode = ({ data }) => {
         fontWeight: '600',
         minWidth: '140px',
         textAlign: 'center',
-        boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+        color: 'white',
+        boxShadow: '0 4px 6px rgba(0,0,0,0.15)',
+        position: 'relative',
         ...getNodeStyle(),
       }}
     >
@@ -82,7 +65,6 @@ const initialNodes = [
 ];
 
 const initialEdges = [];
-
 let nodeId = 2;
 
 function App() {
@@ -107,6 +89,17 @@ function App() {
     setNodes((nds) => nds.concat(newNode));
   };
 
+  // Delete selected nodes
+  const deleteSelectedNodes = () => {
+    setNodes((nds) => nds.filter((node) => !node.selected));
+    setEdges((eds) =>
+      eds.filter(
+        (edge) =>
+          !nodes.find((n) => n.selected && (n.id === edge.source || n.id === edge.target))
+      )
+    );
+  };
+
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex' }}>
       {/* Sidebar */}
@@ -126,18 +119,28 @@ function App() {
         <button onClick={() => addNode('trigger', 'Trigger')} style={{ ...btnStyle, background: '#10b981' }}>
           + Trigger
         </button>
-
         <button onClick={() => addNode('action', 'Action')} style={{ ...btnStyle, background: '#3b82f6' }}>
           + Action
         </button>
-
         <button onClick={() => addNode('condition', 'Condition')} style={{ ...btnStyle, background: '#f59e0b' }}>
           + Condition
         </button>
-
         <button onClick={() => addNode('end', 'End')} style={{ ...btnStyle, background: '#ef4444' }}>
           + End
         </button>
+
+        <hr style={{ borderColor: '#374151', margin: '10px 0' }} />
+
+        <button
+          onClick={deleteSelectedNodes}
+          style={{ ...btnStyle, background: '#dc2626' }}
+        >
+          Delete Selected
+        </button>
+
+        <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '8px' }}>
+          Click a node to select it, then click Delete.
+        </p>
       </div>
 
       {/* Canvas */}
@@ -150,6 +153,7 @@ function App() {
           onConnect={onConnect}
           nodeTypes={nodeTypes}
           fitView
+          deleteKeyCode={['Backspace', 'Delete']}
         >
           <Background color="#aaa" gap={16} />
           <Controls />
