@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -8,12 +8,11 @@ import ReactFlow, {
   useEdgesState,
   Handle,
   Position,
-  Panel,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-// Custom Node Component
-const CustomNode = ({ data, id }) => {
+// ========== Custom Node ==========
+const CustomNode = ({ data }) => {
   const getNodeStyle = () => {
     switch (data.nodeType) {
       case 'trigger':
@@ -40,7 +39,6 @@ const CustomNode = ({ data, id }) => {
         textAlign: 'center',
         color: 'white',
         boxShadow: '0 4px 6px rgba(0,0,0,0.15)',
-        position: 'relative',
         ...getNodeStyle(),
       }}
     >
@@ -55,6 +53,51 @@ const nodeTypes = {
   custom: CustomNode,
 };
 
+// ========== Helper: Detect Cycle ==========
+const wouldCreateCycle = (nodes, edges, source, target) => {
+  // Build adjacency list
+  const graph = {};
+  nodes.forEach((node) => {
+    graph[node.id] = [];
+  });
+  edges.forEach((edge) => {
+    if (graph[edge.source]) {
+      graph[edge.source].push(edge.target);
+    }
+  });
+
+  // Add the new potential edge
+  if (graph[source]) {
+    graph[source].push(target);
+  }
+
+  // DFS to detect cycle
+  const visited = new Set();
+  const recStack = new Set();
+
+  const dfs = (nodeId) => {
+    if (recStack.has(nodeId)) return true;
+    if (visited.has(nodeId)) return false;
+
+    visited.add(nodeId);
+    recStack.add(nodeId);
+
+    const neighbors = graph[nodeId] || [];
+    for (let neighbor of neighbors) {
+      if (dfs(neighbor)) return true;
+    }
+
+    recStack.delete(nodeId);
+    return false;
+  };
+
+  for (let node of nodes) {
+    if (dfs(node.id)) return true;
+  }
+  return false;
+};
+
+// ========== Main App ==========
 const initialNodes = [
   {
     id: '1',
@@ -70,10 +113,22 @@ let nodeId = 2;
 function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const onConnect = useCallback(
-    (params) => setEdges((eds) => addEdge({ ...params, animated: true }, eds)),
-    [setEdges]
+    (params) => {
+      const hasCycle = wouldCreateCycle(nodes, edges, params.source, params.target);
+
+      if (hasCycle) {
+        setErrorMsg('Loop detected! This connection would create a cycle.');
+        setTimeout(() => setErrorMsg(''), 3000);
+        return;
+      }
+
+      setEdges((eds) => addEdge({ ...params, animated: true }, eds));
+      setErrorMsg('');
+    },
+    [nodes, edges, setEdges]
   );
 
   const addNode = (nodeType, label) => {
@@ -89,13 +144,12 @@ function App() {
     setNodes((nds) => nds.concat(newNode));
   };
 
-  // Delete selected nodes
   const deleteSelectedNodes = () => {
+    const selectedIds = nodes.filter((n) => n.selected).map((n) => n.id);
     setNodes((nds) => nds.filter((node) => !node.selected));
     setEdges((eds) =>
       eds.filter(
-        (edge) =>
-          !nodes.find((n) => n.selected && (n.id === edge.source || n.id === edge.target))
+        (edge) => !selectedIds.includes(edge.source) && !selectedIds.includes(edge.target)
       )
     );
   };
@@ -131,20 +185,37 @@ function App() {
 
         <hr style={{ borderColor: '#374151', margin: '10px 0' }} />
 
-        <button
-          onClick={deleteSelectedNodes}
-          style={{ ...btnStyle, background: '#dc2626' }}
-        >
+        <button onClick={deleteSelectedNodes} style={{ ...btnStyle, background: '#dc2626' }}>
           Delete Selected
         </button>
 
         <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '8px' }}>
-          Click a node to select it, then click Delete.
+          Click a node to select → Delete
         </p>
       </div>
 
-      {/* Canvas */}
-      <div style={{ flex: 1 }}>
+      {/* Canvas Area */}
+      <div style={{ flex: 1, position: 'relative' }}>
+        {errorMsg && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '20px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: '#dc2626',
+              color: 'white',
+              padding: '12px 24px',
+              borderRadius: '8px',
+              zIndex: 10,
+              fontWeight: '600',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            }}
+          >
+            {errorMsg}
+          </div>
+        )}
+
         <ReactFlow
           nodes={nodes}
           edges={edges}
