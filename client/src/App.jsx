@@ -11,9 +11,9 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-// ========== Custom Node ==========
+// ========== Custom Node with Status ==========
 const CustomNode = ({ data }) => {
-  const getNodeStyle = () => {
+  const getBaseStyle = () => {
     switch (data.nodeType) {
       case 'trigger':
         return { background: '#10b981', border: '2px solid #059669' };
@@ -28,23 +28,69 @@ const CustomNode = ({ data }) => {
     }
   };
 
+  const getStatusStyle = () => {
+    switch (data.status) {
+      case 'running':
+        return {
+          boxShadow: '0 0 0 3px #3b82f6, 0 0 12px #3b82f6',
+          animation: 'pulse 1.5s infinite',
+        };
+      case 'success':
+        return { boxShadow: '0 0 0 3px #10b981' };
+      case 'failed':
+        return { boxShadow: '0 0 0 3px #ef4444' };
+      default:
+        return {};
+    }
+  };
+
+  const getStatusBadge = () => {
+    const badges = {
+      pending: { text: 'Pending', bg: '#6b7280' },
+      running: { text: 'Running', bg: '#3b82f6' },
+      success: { text: 'Success', bg: '#10b981' },
+      failed: { text: 'Failed', bg: '#ef4444' },
+    };
+    const badge = badges[data.status] || badges.pending;
+
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          top: '-10px',
+          right: '-10px',
+          background: badge.bg,
+          color: 'white',
+          fontSize: '10px',
+          padding: '2px 6px',
+          borderRadius: '10px',
+          fontWeight: '600',
+        }}
+      >
+        {badge.text}
+      </div>
+    );
+  };
+
   return (
     <div
       style={{
-        padding: '12px 18px',
+        padding: '14px 20px',
         borderRadius: '8px',
         fontSize: '13px',
         fontWeight: '600',
-        minWidth: '140px',
+        minWidth: '150px',
         textAlign: 'center',
         color: 'white',
-        boxShadow: '0 4px 6px rgba(0,0,0,0.15)',
-        ...getNodeStyle(),
+        position: 'relative',
+        ...getBaseStyle(),
+        ...getStatusStyle(),
       }}
     >
       <Handle type="target" position={Position.Left} style={{ background: '#555' }} />
       {data.label}
       <Handle type="source" position={Position.Right} style={{ background: '#555' }} />
+      {getStatusBadge()}
     </div>
   );
 };
@@ -53,25 +99,17 @@ const nodeTypes = {
   custom: CustomNode,
 };
 
-// ========== Helper: Detect Cycle ==========
+// ========== Loop Detection Helper ==========
 const wouldCreateCycle = (nodes, edges, source, target) => {
-  // Build adjacency list
   const graph = {};
   nodes.forEach((node) => {
     graph[node.id] = [];
   });
   edges.forEach((edge) => {
-    if (graph[edge.source]) {
-      graph[edge.source].push(edge.target);
-    }
+    if (graph[edge.source]) graph[edge.source].push(edge.target);
   });
+  if (graph[source]) graph[source].push(target);
 
-  // Add the new potential edge
-  if (graph[source]) {
-    graph[source].push(target);
-  }
-
-  // DFS to detect cycle
   const visited = new Set();
   const recStack = new Set();
 
@@ -82,11 +120,9 @@ const wouldCreateCycle = (nodes, edges, source, target) => {
     visited.add(nodeId);
     recStack.add(nodeId);
 
-    const neighbors = graph[nodeId] || [];
-    for (let neighbor of neighbors) {
+    for (let neighbor of graph[nodeId] || []) {
       if (dfs(neighbor)) return true;
     }
-
     recStack.delete(nodeId);
     return false;
   };
@@ -102,7 +138,7 @@ const initialNodes = [
   {
     id: '1',
     position: { x: 250, y: 100 },
-    data: { label: 'Start Trigger', nodeType: 'trigger' },
+    data: { label: 'Start Trigger', nodeType: 'trigger', status: 'pending' },
     type: 'custom',
   },
 ];
@@ -117,14 +153,11 @@ function App() {
 
   const onConnect = useCallback(
     (params) => {
-      const hasCycle = wouldCreateCycle(nodes, edges, params.source, params.target);
-
-      if (hasCycle) {
+      if (wouldCreateCycle(nodes, edges, params.source, params.target)) {
         setErrorMsg('Loop detected! This connection would create a cycle.');
         setTimeout(() => setErrorMsg(''), 3000);
         return;
       }
-
       setEdges((eds) => addEdge({ ...params, animated: true }, eds));
       setErrorMsg('');
     },
@@ -138,7 +171,7 @@ function App() {
         x: Math.random() * 450 + 50,
         y: Math.random() * 350 + 50,
       },
-      data: { label, nodeType },
+      data: { label, nodeType, status: 'pending' },
       type: 'custom',
     };
     setNodes((nds) => nds.concat(newNode));
@@ -154,12 +187,32 @@ function App() {
     );
   };
 
+  // Simulate execution status change (for testing)
+  const simulateExecution = () => {
+    setNodes((nds) =>
+      nds.map((node, index) => {
+        if (index === 0) return { ...node, data: { ...node.data, status: 'success' } };
+        if (index === 1) return { ...node, data: { ...node.data, status: 'running' } };
+        return { ...node, data: { ...node.data, status: 'pending' } };
+      })
+    );
+  };
+
+  const resetStatus = () => {
+    setNodes((nds) =>
+      nds.map((node) => ({
+        ...node,
+        data: { ...node.data, status: 'pending' },
+      }))
+    );
+  };
+
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex' }}>
       {/* Sidebar */}
       <div
         style={{
-          width: '230px',
+          width: '240px',
           background: '#111827',
           color: 'white',
           padding: '24px 16px',
@@ -189,12 +242,18 @@ function App() {
           Delete Selected
         </button>
 
-        <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '8px' }}>
-          Click a node to select → Delete
-        </p>
+        <hr style={{ borderColor: '#374151', margin: '10px 0' }} />
+
+        <h4 style={{ margin: '0 0 6px 0', fontSize: '14px', color: '#9ca3af' }}>Simulation</h4>
+        <button onClick={simulateExecution} style={{ ...btnStyle, background: '#8b5cf6' }}>
+          Simulate Run
+        </button>
+        <button onClick={resetStatus} style={{ ...btnStyle, background: '#6b7280' }}>
+          Reset Status
+        </button>
       </div>
 
-      {/* Canvas Area */}
+      {/* Canvas */}
       <div style={{ flex: 1, position: 'relative' }}>
         {errorMsg && (
           <div
@@ -209,7 +268,6 @@ function App() {
               borderRadius: '8px',
               zIndex: 10,
               fontWeight: '600',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
             }}
           >
             {errorMsg}
@@ -231,6 +289,17 @@ function App() {
           <MiniMap />
         </ReactFlow>
       </div>
+
+      {/* CSS for pulse animation */}
+      <style>
+        {`
+          @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+          }
+        `}
+      </style>
     </div>
   );
 }
